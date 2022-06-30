@@ -84,15 +84,13 @@ HERMES_GIT_URL="$GITHUB_HTTPS_URL$HERMES_REPO"
 
 check_dependencies
 
-echo "PATH=$BASE_IBC_PATH"
-
 mkdir -p "$BASE_IBC_PATH/$BASE_DIR"
 cd "$BASE_IBC_PATH/$BASE_DIR"
 
 # Clone anoma and ibc-rs repositories
 
 # anoma
-printf "\e[0m[\e[1;32m+\e[0m] Cloning $ANOMA_GIT_URL\n"
+printf "\n\e[0m[\e[1;32m+\e[0m] Cloning $ANOMA_GIT_URL\n"
 [ ! -d $ANOMA_DIR ] && git clone $ANOMA_GIT_URL || printf "\e[0m[\e[1;33m*\e[0m] Directory anoma exists, skipping...\n\n"
 
 # Hermes (ibc-rs)
@@ -101,19 +99,42 @@ printf "\e[0m[\e[1;32m+\e[0m] Cloning $HERMES_GIT_URL\n"
 
 # Install Anoma
 printf "\e[0m[\e[1;32m+\e[0m] Installing Anoma\n\n"
-cd $ANOMA_DIR && git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
+cd $ANOMA_DIR && git checkout $ANOMA_BRANCH #&& make install && make build-wasm-scripts
 # TODO: Initialize each chain and keep track of chain IDs
 
 printf "\e[0m[\e[1;32m+\e[0m] Installing Hermes\n\n"
 cd ../$HERMES_DIR && git checkout $HERMES_BRANCH
 
-# TODO: Copy configuration template and add Namada Chain IDS
+# TODO: Copy configuration template to Hermes and add Namada Chain IDS
 # TODO: Copy wasms to anoma_wasm/
 # TODO: Copy each wallet to anoma_wallet/
 # TODO: Create connection and channel
 
-cd ..
+cd ../..
 
+# TODO: Once chains are configured, generate a .env file for the Wallet UI:
 
-echo "Finished!"
+ENV_PREFIX="REACT_APP_"
+
+ENV_PATH=$BASE_IBC_PATH/$BASE_DIR/.env
+
+write_env() {
+  cat <<EOF > $ENV_PATH
+# Chain A
+$(echo $ENV_PREFIX)CHAIN_A_ID=xxxxxxxxx
+$(echo $ENV_PREFIX)CHAIN_A_URL=127.0.0.1
+$(echo $ENV_PREFIX)CHAIN_A_PORT=$CHAIN_A_PORT
+
+# Chain B
+$(echo $ENV_PREFIX)CHAIN_B_ID=xxxxxxxxx
+$(echo $ENV_PREFIX)CHAIN_B_URL=127.0.0.1
+$(echo $ENV_PREFIX)CHAIN_B_PORT=$CHAIN_B_PORT
+EOF
+}
+
+printf "\n\e[0m[\e[1;32m+\e[0m] Writing Wallet UI config to $ENV_PATH\n\n"
+
+write_env
+
+echo "Success!"
 exit 0
