@@ -9,8 +9,6 @@ usage() {
 Usage: $0 [-h] [-s] <ip:port>
 
         -s: Use SSH for Github repos
- <ip:port>: Enter any number of IP addresses (optionally with a PORT specified)
-            to query balance on.
         -h: Show this message
 
 EOF

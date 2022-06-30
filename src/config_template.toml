@@ -47,7 +47,7 @@ account_prefix = 'cosmos'
 clock_drift = '5s' 
 gas_price = {price = 0.001, denom = 'stake'} 
 grpc_addr = 'http://127.0.0.1:9090' 
-id = '{#CHAIN_B_ID}'
+id = '#{CHAIN_B_ID}'
 key_name = 'albert' # tentative signer
 max_gas = 3000000 
 max_msg_num = 30 
