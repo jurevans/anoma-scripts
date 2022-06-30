@@ -6,7 +6,7 @@
 usage() {
   cat << EOF >&2
 
-Usage: $0 [-h] [-s] <ip:port>
+Usage: $0 [-h] [-s]
 
         -s: Use SSH for Github repos
         -h: Show this message
@@ -30,7 +30,7 @@ check_dependencies() {
 
   if ! command -v wasm-opt &> /dev/null
   then
-    echo "wasm-opt could not be found! Your wasm will not be optimized!"
+    echo "wasm-opt could not be found! Your wasms will not be optimized!"
   fi
 }
 
