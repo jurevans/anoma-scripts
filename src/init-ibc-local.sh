@@ -8,8 +8,8 @@ usage() {
 
 Usage: $0 [-h] [-s]
 
-        -s: Use SSH for Github repos
-        -h: Show this message
+  -s: Use SSH for Github repos (defaults to https)
+  -h: Show this message
 
 EOF
   exit 1
@@ -25,12 +25,14 @@ check_dependencies() {
   if ! command -v cargo &> /dev/null
   then
     echo "cargo could not be found, but is a required dependency!"
+    echo "Install rustup: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     exit 1
   fi
 
   if ! command -v wasm-opt &> /dev/null
   then
     echo "wasm-opt could not be found! Your wasms will not be optimized!"
+    echo "Install binaryen: https://github.com/WebAssembly/binaryen"
   fi
 }
 
@@ -99,7 +101,7 @@ printf "\e[0m[\e[1;32m+\e[0m] Cloning $HERMES_GIT_URL\n"
 
 # Install Anoma
 printf "\e[0m[\e[1;32m+\e[0m] Installing Anoma\n\n"
-cd $ANOMA_DIR && git checkout $ANOMA_BRANCH && echo "anoma" make install && make build-wasm-scripts
+cd $ANOMA_DIR && git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
 # TODO: Initialize each chain and keep track of chain IDs
 
 printf "\e[0m[\e[1;32m+\e[0m] Installing Hermes\n\n"
