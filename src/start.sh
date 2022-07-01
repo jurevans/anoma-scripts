@@ -15,7 +15,6 @@ Usage: $0 [-a <chain-a|chain-b|hermes>] [-h]
   -h: Show this message
 
   *Hint* - Set environment variable BASE_IBC_PATH to a different build path. Defaults to $(pwd)/build
-
 EOF
   exit 0
 }
@@ -79,16 +78,16 @@ start_hermes() {
 }
 
 case $APP in
-  "chain-a")
+  chain-a)
     start_chain_a
     ;;
-  "chain-b")
+  chain-b)
     start_chain_b
     ;;
-  "hermes")
+  hermes)
     start_hermes
     ;;
-  (*)
+  *)
     echo "No app by that name found!"
     exit 1 ;;
 esac

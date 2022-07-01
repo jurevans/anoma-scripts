@@ -124,12 +124,12 @@ cd "$BUILD_DIR" && printf "\n$STATUS_WARN Set working directory to $(pwd)\n"
 
 # Clone anoma and ibc-rs repositories
 
-# anoma
+# Check for Anoma, git clone if none
 printf "\n$STATUS_INFO Cloning $ANOMA_GIT_URL\n"
 [ ! -d $BUILD_DIR/$ANOMA_DIR ] &&  git clone  $ANOMA_GIT_URL || \
   printf "$STATUS_NOTICE Directory anoma exists, skipping git clone...\n\n"
 
-# Hermes (ibc-rs)
+# Check for Hermes (ibc-rs), git clone if none
 printf "$STATUS_INFO Cloning $HERMES_GIT_URL\n"
 [ ! -d $BUILD_DIR/$HERMES_DIR ] && git clone $HERMES_GIT_URL || \
   printf "$STATUS_NOTICE Directory ibc-rs exists, skipping git clone...\n\n"
