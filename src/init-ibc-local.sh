@@ -167,6 +167,7 @@ fi
 
 # CHAIN A
 printf "$STATUS_INFO Initializing Chain A\n\n"
+# Swap net_address port for Chain A genesis
 sed -i "s/$CHAIN_B_NET_PORT/$CHAIN_A_NET_PORT/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
 printf "$STATUS_INFO Using $( grep "net_address" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH )\n\n"
 
@@ -188,6 +189,7 @@ printf "$STATUS_INFO Setting Chain A faucet to $CHAIN_A_FAUCET\n\n"
 
 # CHAIN B
 printf "$STATUS_INFO Initializing Chain B\n\n"
+# Swap net_address port for Chain B genesis
 sed -i "s/$CHAIN_A_NET_PORT/$CHAIN_B_NET_PORT/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
 printf "$STATUS_INFO Using $( grep "net_address" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH )\n\n"
 
@@ -290,19 +292,28 @@ EOF
 # Create connection
 
 printf "$STATUS_INFO Creating connection between $CHAIN_A_ID and $CHAIN_B_ID\n"
+# Wait for block height to be > 0
 sleep 3
 
 CONNECTION_STDOUT="$( cargo run --bin hermes -- -c config.toml \
   create connection $CHAIN_A_ID $CHAIN_B_ID ) "
 
-echo "${CONNECTION_STDOUT%?}"
-
 CONNECTION_ID=$( echo "${CONNECTION_STDOUT%?}" | grep -A 3 connection_id | grep -m1 "connection-" |  tr -d " " | cut -d \" -f2 )
 
 printf "$STATUS_INFO Established connection with ID: $CONNECTION_ID\n"
 
-# Kill existing anoman processes:
+printf "$STATUS_INFO Create channel on $CONNECTION_ID\n"
 
+CHANNEL_STDOUT="$( cargo run --bin hermes -- -c config.toml \
+  create channel \
+  --port-a transfer --port-b transfer \
+   $CHAIN_A_ID $CONNECTION_ID ) "
+
+CHANNEL_ID="channel-$( echo "${CHANNEL_STDOUT%?}" | grep -A 3 "channel_id: Some" | tr -d " " | grep -E -o -m1 "[0-9]+" )"
+echo "${CHANNEL_STDOUT%?}"
+printf "$STATUS_INFO Established channel with ID: $CHANNEL_ID\n"
+
+# Kill existing anoman processes:
 if [ ! command -v pkill &> /dev/null ]
 then
   printf "$STATUS_NOTICE pkill command not found! You will need to manually kill PIDs: $CHAIN_A_PID & $CHAIN_B_PID\n\n"
@@ -310,6 +321,21 @@ else
   pkill anoman
 fi
 cd $BUILD_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n" 
+
+# Generate a runtime config for CLI:
+CONFIG_PATH=$BUILD_DIR/config.toml
+
+write_config() {
+  cat <<EOF > $CONFIG_PATH
+[chain]
+chain_a_id = "$CHAIN_A_ID"
+chain_b_id = "$CHAIN_B_ID"
+
+[ibc]
+connection_id = "$CONNECTION_ID"
+channel_id = "$CHANNEL_ID"
+EOF
+}
 
 # Generate a .env file for the Wallet UI:
 ENV_PATH=$BUILD_DIR/.env
@@ -332,9 +358,11 @@ REACT_APP_CHAIN_B_FAUCET=$CHAIN_B_FAUCET
 EOF
 }
 
-printf "\n$STATUS_INFO Writing Wallet UI config to $ENV_PATH\n\n"
+printf "\n$STATUS_INFO Writing CLI runtime config to $CONFIG_PATH\n"
+write_config
 
+printf "\n$STATUS_INFO Writing Wallet UI config to $ENV_PATH\n"
 write_env
 
-echo "Success!"
+echo "Finished!"
 exit 0
