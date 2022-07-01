@@ -31,26 +31,27 @@ CHAIN_A_TEMPLATE="#{CHAIN_A_ID}"
 CHAIN_B_TEMPLATE="#{CHAIN_B_ID}"
 
 check_dependencies() {
-  if ! command -v git &> /dev/null
+  if [ ! command -v git &> /dev/null ]
   then
     printf "\n$STATUS_FAIL git could not be found, but is a required dependency!\n"
     exit 1
   fi
 
-  if ! command -v cargo &> /dev/null
+  if [ ! command -v cargo &> /dev/null ]
   then
     printf "\n$STATUS_FAIL cargo could not be found, but is a required dependency!\n"
     echo "Install rustup: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     exit 1
   fi
 
-  if ! command -v wasm-opt &> /dev/null
+  if [ ! command -v wasm-opt &> /dev/null ]
   then
     printf "\n$STATUS_FAIL wasm-opt could not be found, but is a required dependency!\n"
     echo "Install binaryen: https://github.com/WebAssembly/binaryen"
     exit 1
   fi
 }
+
 
 # DEFAULTS
 
@@ -70,11 +71,13 @@ USE_GIT_SSH=false
 CHAIN_A_ALIAS="Namada - Instance 1"
 CHAIN_A_ID=""
 CHAIN_A_PORT=27657
+CHAIN_A_NET_PORT=27656
 CHAIN_A_FAUCET=""
 
 CHAIN_B_ALIAS="Namada - Instance 2"
 CHAIN_B_ID=""
 CHAIN_B_PORT=28657
+CHAIN_B_NET_PORT=28656
 CHAIN_B_FAUCET=""
 
 GITHUB_SSH_URL="git@github.com:"
@@ -90,6 +93,15 @@ GENESIS_PATH="genesis/e2e-tests-single-node.toml"
 WASM_CHECKSUMS_PATH="wasm/checksums.json"
 
 LOCALHOST_URL="127.0.0.1"
+
+# Spawn an anoman child process and return the PID
+spawn_anoma() {
+  CHAIN_ID=$1
+  cd $BUILD_DIR/$ANOMA_DIR
+  nohup $BUILD_DIR/$ANOMA_DIR/target/release/anoman --base-dir .anoma/$CHAIN_ID/setup/validator-0/.anoma \
+    --mode validator ledger run > /dev/null &
+  echo $!
+}
 
 # Get CLI Options
 while getopts "hs" arg; do
@@ -132,11 +144,11 @@ printf "$STATUS_INFO Cloning $HERMES_GIT_URL\n"
 printf "\e$STATUS_INFO Installing Anoma\n"
 cd $BUILD_DIR/$ANOMA_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n\n"
 
-if [ ! -d $BUILD_DIR/$ANOMA_DIR/target/release ]
+if [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anomac  ] || [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anoman ]
 then
   git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
 else
-  printf "$STATUS_NOTICE Anoma release target already present, skipping build\n\n"
+  printf "$STATUS_NOTICE Anoma release targets already present, skipping build...\n\n"
 fi
 
 # Initialize Namada Chains
@@ -155,6 +167,9 @@ fi
 
 # CHAIN A
 printf "$STATUS_INFO Initializing Chain A\n\n"
+sed -i "s/$CHAIN_B_NET_PORT/$CHAIN_A_NET_PORT/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
+printf "$STATUS_INFO Using $( grep "net_address" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH )\n\n"
+
 CHAIN_A_INIT_STDOUT=$(./target/release/anomac utils init-network \
   --unsafe-dont-encrypt \
   --genesis-path $GENESIS_PATH \
@@ -173,6 +188,9 @@ printf "$STATUS_INFO Setting Chain A faucet to $CHAIN_A_FAUCET\n\n"
 
 # CHAIN B
 printf "$STATUS_INFO Initializing Chain B\n\n"
+sed -i "s/$CHAIN_A_NET_PORT/$CHAIN_B_NET_PORT/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
+printf "$STATUS_INFO Using $( grep "net_address" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH )\n\n"
+
 CHAIN_B_INIT_STDOUT=$(./target/release/anomac utils init-network \
   --unsafe-dont-encrypt \
   --genesis-path $GENESIS_PATH \
@@ -249,8 +267,48 @@ printf "$STATUS_INFO Added $CHAIN_A_ID to $BUILD_DIR/$HERMES_DIR/config.toml\n"
 sed -i "s/$CHAIN_B_TEMPLATE/$CHAIN_B_ID/" $BUILD_DIR/$HERMES_DIR/config.toml
 printf "$STATUS_INFO Added $CHAIN_B_ID to $BUILD_DIR/$HERMES_DIR/config.toml\n"
 
-# TODO: Create connection and channel
+# Spawn Chain A
+printf "$STATUS_INFO Spawning Chain A anoman process\n"
+CHAIN_A_PID=$( spawn_anoma $CHAIN_A_ID )
+printf "$STATUS_INFO Spawned anoman process for $CHAIN_A_ID with PID: $CHAIN_A_PID\n\n"
 
+# Spawn Chain B
+printf "$STATUS_INFO Spawning Chain B anoman process\n"
+CHAIN_B_PID=$( spawn_anoma $CHAIN_B_ID )
+printf "$STATUS_INFO Spawned anoman process for $CHAIN_B_ID with PID: $CHAIN_B_PID\n\n"
+
+ANOMAN_PROCESSES="$( ps -e | grep anoman ) "
+cat <<EOF >&2
+
+-----------------------------------
+anoman processes
+-----------------------------------
+$( echo "${ANOMAN_PROCESSES%?}")
+
+EOF
+
+# Create connection
+
+printf "$STATUS_INFO Creating connection between $CHAIN_A_ID and $CHAIN_B_ID\n"
+sleep 3
+
+CONNECTION_STDOUT="$( cargo run --bin hermes -- -c config.toml \
+  create connection $CHAIN_A_ID $CHAIN_B_ID ) "
+
+echo "${CONNECTION_STDOUT%?}"
+
+CONNECTION_ID=$( echo "${CONNECTION_STDOUT%?}" | grep -A 3 connection_id | grep -m1 "connection-" |  tr -d " " | cut -d \" -f2 )
+
+printf "$STATUS_INFO Established connection with ID: $CONNECTION_ID\n"
+
+# Kill existing anoman processes:
+
+if [ ! command -v pkill &> /dev/null ]
+then
+  printf "$STATUS_NOTICE pkill command not found! You will need to manually kill PIDs: $CHAIN_A_PID & $CHAIN_B_PID\n\n"
+else
+  pkill anoman
+fi
 cd $BUILD_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n" 
 
 # Generate a .env file for the Wallet UI:
