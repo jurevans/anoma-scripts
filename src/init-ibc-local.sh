@@ -13,6 +13,10 @@ Usage: $0 [-h] [-s]
 
   *Hint* - Set environment variable BASE_IBC_PATH to point build to a different path. Defaults to $(pwd)/build
 
+  Required packages:
+    - git
+    - cargo (install via rustup: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)
+    - wasm-opt (part of the binaryen package at https://github.com/WebAssembly/binaryen)
 EOF
   exit 1
 }
@@ -110,26 +114,44 @@ HERMES_GIT_URL="$GITHUB_HTTPS_URL$HERMES_REPO"
 check_dependencies
 
 mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR" && printf "\n$STATUS_WARN Changed directory to $(pwd)\n"
+cd "$BUILD_DIR" && printf "\n$STATUS_WARN Set working directory to $(pwd)\n"
 
 # Clone anoma and ibc-rs repositories
 
 # anoma
 printf "\n$STATUS_INFO Cloning $ANOMA_GIT_URL\n"
-[ ! -d $ANOMA_DIR ] && git clone $ANOMA_GIT_URL || \
+[ ! -d $BUILD_DIR/$ANOMA_DIR ] &&  git clone  $ANOMA_GIT_URL || \
   printf "$STATUS_NOTICE Directory anoma exists, skipping git clone...\n\n"
 
 # Hermes (ibc-rs)
 printf "$STATUS_INFO Cloning $HERMES_GIT_URL\n"
-[ ! -d $HERMES_DIR ] && git clone $HERMES_GIT_URL || \
+[ ! -d $BUILD_DIR/$HERMES_DIR ] && git clone $HERMES_GIT_URL || \
   printf "$STATUS_NOTICE Directory ibc-rs exists, skipping git clone...\n\n"
 
 # Install Anoma
 printf "\e$STATUS_INFO Installing Anoma\n"
-cd $BUILD_DIR/$ANOMA_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n\n" && \
+cd $BUILD_DIR/$ANOMA_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n\n"
+
+if [ ! -d $BUILD_DIR/$ANOMA_DIR/target/release ]
+then
   git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
+else
+  printf "$STATUS_NOTICE Anoma release target already present, skipping build\n\n"
+fi
 
 # Initialize Namada Chains
+
+# Check to ensure vp_token hash is correct, update if not
+VP_TOKEN_OLD_HASH=$( cat $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH | grep -A 3 "wasm.vp_token" | grep sha256 | cut -d \" -f2 )
+VP_TOKEN_HASH=$( cat $BUILD_DIR/$ANOMA_DIR/$WASM_CHECKSUMS_PATH | grep "\"vp_token.wasm\"" | cut -d \" -f4 | cut -d \. -f2 )
+
+if [ $VP_TOKEN_OLD_HASH != $VP_TOKEN_HASH ]
+then
+  printf "$STATUS_NOTICE $VP_TOKEN_OLD_HASH != $VP_TOKEN_HASH\n"
+  printf "$STATUS_NOTICE vp_token hash mismatch, updating...\n"
+  sed -i "s/$VP_TOKEN_OLD_HASH/$VP_TOKEN_HASH/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
+  printf "$STATUS_INFO Successfuly updated $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH!\n\n"
+fi
 
 # CHAIN A
 printf "$STATUS_INFO Initializing Chain A\n\n"
@@ -174,7 +196,7 @@ cp wasm/checksums.json .anoma/$CHAIN_A_ID/wasm/
 cp wasm/*.wasm .anoma/$CHAIN_A_ID/setup/validator-0/.anoma/$CHAIN_A_ID/wasm/
 cp wasm/checksums.json .anoma/$CHAIN_A_ID/setup/validator-0/.anoma/$CHAIN_A_ID/wasm/
 
-printf "$STATUS_INFO Copied wasms and checkusms.json for $CHAIN_A_ID\n\n"
+printf "$STATUS_INFO Copied wasms and checksums.json for $CHAIN_A_ID\n\n"
 
 # Chain B - Copy wasms and checksums.json to appropriate directories
 
@@ -183,12 +205,12 @@ cp wasm/checksums.json .anoma/$CHAIN_B_ID/wasm/
 cp wasm/*.wasm .anoma/$CHAIN_B_ID/setup/validator-0/.anoma/$CHAIN_B_ID/wasm/
 cp wasm/checksums.json .anoma/$CHAIN_B_ID/setup/validator-0/.anoma/$CHAIN_B_ID/wasm/
 
-printf "$STATUS_INFO Copied wasms and checkusms.json for $CHAIN_B_ID\n\n"
+printf "$STATUS_INFO Copied wasms and checksums.json for $CHAIN_B_ID\n\n"
 
 # Set up Hermes
 
 printf "$STATUS_INFO Configuring Hermes\n\n"
-cd ../$HERMES_DIR && printf "$STATUS_WARN Changed directory to $(pwd)\n\n" && \
+cd $BUILD_DIR/$HERMES_DIR && printf "$STATUS_WARN Changed directory to $(pwd)\n\n" && \
   git checkout $HERMES_BRANCH
 
 mkdir -p anoma_wasm
@@ -200,23 +222,33 @@ printf "$STATUS_INFO Created directory $BUILD_DIR/$HERMES_DIR/anoma_wallet/$CHAI
 
 # Copy chain files to Hermes
 
-cp $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_A_ID/setup/other/wallet.toml anoma_wallet/$CHAIN_A_ID
+cp $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_A_ID/setup/other/wallet.toml $BUILD_DIR/$HERMES_DIR/anoma_wallet/$CHAIN_A_ID
 printf "$STATUS_INFO Copied $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_A_ID/setup/other/wallet.toml -->\
  $BUILD_DIR/$HERMES_DIR/anoma_wallet/$CHAIN_A_ID\n"
 
-cp $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_B_ID/setup/other/wallet.toml anoma_wallet/$CHAIN_B_ID
+cp $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_B_ID/setup/other/wallet.toml $BUILD_DIR/$HERMES_DIR/anoma_wallet/$CHAIN_B_ID
 printf "$STATUS_INFO Copied $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_B_ID/setup/other/wallet.toml -->\
  $BUILD_DIR/$HERMES_DIR/anoma_wallet/$CHAIN_B_ID\n"
 
-cp $BUILD_DIR/$ANOMA_DIR/$WASM_CHECKSUMS_PATH anoma_wasm
+cp $BUILD_DIR/$ANOMA_DIR/$WASM_CHECKSUMS_PATH $BUILD_DIR/$HERMES_DIR/anoma_wasm
 printf "$STATUS_INFO Copied $BUILD_DIR/$ANOMA_DIR/$WASM_CHECKSUMS_PATH -->\
  $BUILD_DIR/$HERMES_DIR/anoma_wasm/\n"
 
-cp $BUILD_DIR/$ANOMA_DIR/wasm/tx_ibc*.wasm anoma_wasm
+cp $BUILD_DIR/$ANOMA_DIR/wasm/tx_ibc*.wasm $BUILD_DIR/$HERMES_DIR/anoma_wasm
 printf "$STATUS_INFO Copied $BUILD_DIR/$ANOMA_DIR/wasm/tx_ibc*.wasm -->\
  $BUILD_DIR/$HERMES_DIR/anoma_wasm/\n"
 
-# TODO: Copy configuration template to Hermes and add Namada Chain IDS
+# Copy configuration template to Hermes and add Namada Chain IDS
+
+cp $BASE_IBC_PATH/$HERMES_CONFIG_TEMPLATE $BUILD_DIR/$HERMES_DIR/config.toml
+printf "$STATUS_INFO Copied $BASE_IBC_PATH/$HERMES_CONFIG_TEMPLATE -->\
+ $BUILD_DIR/$HERMES_DIR/config.toml\n"
+
+sed -i "s/$CHAIN_A_TEMPLATE/$CHAIN_A_ID/" $BUILD_DIR/$HERMES_DIR/config.toml
+printf "$STATUS_INFO Added $CHAIN_A_ID to $BUILD_DIR/$HERMES_DIR/config.toml\n"
+sed -i "s/$CHAIN_B_TEMPLATE/$CHAIN_B_ID/" $BUILD_DIR/$HERMES_DIR/config.toml
+printf "$STATUS_INFO Added $CHAIN_B_ID to $BUILD_DIR/$HERMES_DIR/config.toml\n"
+
 # TODO: Create connection and channel
 
 cd $BUILD_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n" 
