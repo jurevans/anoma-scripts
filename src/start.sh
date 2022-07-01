@@ -59,10 +59,8 @@ while getopts "ha:" arg; do
       usage ;;
     (*)
       usage ;;
-    # TODO: Add option to force-rebuild everything (no skipping of existing builds)
   esac
 done
-
 shift $((OPTIND-1))
 
 start_chain_a() {

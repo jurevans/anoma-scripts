@@ -26,6 +26,10 @@ Install and configure 2 Namada chains with the Hermes relayer:
 ./init-ibc-local.sh -s
 ```
 
+**NOTE**: If this process hangs during the IBC `create connection` phase, it's safe to hit `Ctrl-C` and exit, then
+re-issue the command. It will skip most completed steps, re-initialize two Namada chains, and create an IBC
+connection and channel.
+
 Upon completion, this will generate two files in the `build/` folder:
 
 ```bash
