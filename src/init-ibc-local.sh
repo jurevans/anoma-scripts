@@ -6,7 +6,7 @@
 usage() {
   cat << EOF >&2
 
-Usage: $0 [-h] [-s]
+Usage: $0 [-s] [-h]
 
   -s: Use SSH for Github repos (defaults to https)
   -h: Show this message
@@ -31,32 +31,27 @@ CHAIN_A_TEMPLATE="#{CHAIN_A_ID}"
 CHAIN_B_TEMPLATE="#{CHAIN_B_ID}"
 
 check_dependencies() {
-  if [ ! command -v git &> /dev/null ]
-  then
+  if [ ! command -v git &> /dev/null ]; then
     printf "\n$STATUS_FAIL git could not be found, but is a required dependency!\n"
     exit 1
   fi
 
-  if [ ! command -v cargo &> /dev/null ]
-  then
+  if [ ! command -v cargo &> /dev/null ]; then
     printf "\n$STATUS_FAIL cargo could not be found, but is a required dependency!\n"
     echo "Install rustup: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     exit 1
   fi
 
-  if [ ! command -v wasm-opt &> /dev/null ]
-  then
+  if [ ! command -v wasm-opt &> /dev/null ]; then
     printf "\n$STATUS_FAIL wasm-opt could not be found, but is a required dependency!\n"
     echo "Install binaryen: https://github.com/WebAssembly/binaryen"
     exit 1
   fi
 }
 
-
 # DEFAULTS
 
-if [ ! -z $BASE_IBC_PATH ]
-then
+if [ ! -z $BASE_IBC_PATH ]; then
   BASE_IBC_PATH=$BASE_IBC_PATH
 else
   BASE_IBC_PATH=$(pwd)
@@ -80,7 +75,7 @@ CHAIN_B_PORT=28657
 CHAIN_B_NET_PORT=28656
 CHAIN_B_FAUCET=""
 
-GITHUB_SSH_URL="git@github.com:"
+GITHUB_SSH_URL="git@github.com"
 GITHUB_HTTPS_URL="https://github.com"
 
 ANOMA_REPO="/anoma/anoma.git"
@@ -107,8 +102,7 @@ spawn_anoma() {
 while getopts "hs" arg; do
   case $arg in
     (s)
-      USE_GIT_SSH=true
-      shift $() ;;
+      USE_GIT_SSH=true ;;
     (h)
       usage ;;
     (*)
@@ -117,11 +111,11 @@ while getopts "hs" arg; do
   esac
 done
 
-ANOMA_GIT_URL="$GITHUB_HTTPS_URL$ANOMA_REPO"
-HERMES_GIT_URL="$GITHUB_HTTPS_URL$HERMES_REPO"
+ANOMA_GIT_URL="${GITHUB_HTTPS_URL}${ANOMA_REPO}"
+HERMES_GIT_URL="${GITHUB_HTTPS_URL}${HERMES_REPO}"
 
-[[ $USE_GIT_SSH == true ]] && ANOMA_GIT_URL="$GITHUB_SSH_URL$ANOMA_REPO"
-[[ $USE_GIT_SSH == true ]] && HERMES_GIT_URL="$GITHUB_SSH_URL$HERMES_REPO"
+[[ $USE_GIT_SSH == true ]] && ANOMA_GIT_URL="${GITHUB_SSH_URL}:${ANOMA_REPO}"
+[[ $USE_GIT_SSH == true ]] && HERMES_GIT_URL="${GITHUB_SSH_URL}:${HERMES_REPO}"
 
 check_dependencies
 
@@ -144,8 +138,7 @@ printf "$STATUS_INFO Cloning $HERMES_GIT_URL\n"
 printf "\e$STATUS_INFO Installing Anoma\n"
 cd $BUILD_DIR/$ANOMA_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n\n"
 
-if [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anomac  ] || [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anoman ]
-then
+if [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anomac  ] || [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anoman ]; then
   git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
 else
   printf "$STATUS_NOTICE Anoma release targets already present, skipping build...\n\n"
@@ -157,8 +150,7 @@ fi
 VP_TOKEN_OLD_HASH=$( cat $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH | grep -A 3 "wasm.vp_token" | grep sha256 | cut -d \" -f2 )
 VP_TOKEN_HASH=$( cat $BUILD_DIR/$ANOMA_DIR/$WASM_CHECKSUMS_PATH | grep "\"vp_token.wasm\"" | cut -d \" -f4 | cut -d \. -f2 )
 
-if [ $VP_TOKEN_OLD_HASH != $VP_TOKEN_HASH ]
-then
+if [ $VP_TOKEN_OLD_HASH != $VP_TOKEN_HASH ]; then
   printf "$STATUS_NOTICE $VP_TOKEN_OLD_HASH != $VP_TOKEN_HASH\n"
   printf "$STATUS_NOTICE vp_token hash mismatch, updating...\n"
   sed -i "s/$VP_TOKEN_OLD_HASH/$VP_TOKEN_HASH/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
@@ -314,8 +306,7 @@ echo "${CHANNEL_STDOUT%?}"
 printf "$STATUS_INFO Established channel with ID: $CHANNEL_ID\n"
 
 # Kill existing anoman processes:
-if [ ! command -v pkill &> /dev/null ]
-then
+if [ ! command -v pkill &> /dev/null ]; then
   printf "$STATUS_NOTICE pkill command not found! You will need to manually kill PIDs: $CHAIN_A_PID & $CHAIN_B_PID\n\n"
 else
   pkill anoman
