@@ -319,6 +319,8 @@ CHANNEL_STDOUT="$( cargo run --bin hermes -- -c config.toml \
   --port-a transfer --port-b transfer \
    $CHAIN_A_ID $CONNECTION_ID ) "
 
+# We can likely just assume channel-0 for src and dst, as the chains will always be new.
+# This is mainly for debugging and seeing in the output that Hermes completed the channel creation process.
 CHANNEL_ID="channel-$( echo "${CHANNEL_STDOUT%?}" | grep -A 3 "channel_id: Some" | tr -d " " | grep -E -o -m1 "[0-9]+" )"
 echo "${CHANNEL_STDOUT%?}"
 printf "$STATUS_INFO Established channel with ID: $CHANNEL_ID\n"

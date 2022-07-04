@@ -24,6 +24,11 @@ Install and configure 2 Namada chains with the Hermes relayer:
 
 # Alternatively, specify that you want git to work over SSH:
 ./init-ibc-local.sh -s
+
+# If you want to run this on a remote host (e.g., in a VM), you can specify
+# an IP address for the wallet app to connect to. This will configure Tendermint RPC to
+# correctly listen on both the source and destination chain:
+./init-ibc-local.sh -i 10.9.8.101
 ```
 
 **NOTE**: If this process hangs during the IBC `create connection` phase, it's safe to hit `Ctrl-C` and exit, then
@@ -40,7 +45,7 @@ config.toml
 The `.env` file can be copied to the Wallet UI application (in `anoma-apps/packages/anoma-wallet`) to configure it to
 work with this set-up.
 
-The `config.toml` is simply the stored, generated information needed to run the chains and relayer from the helper CLI.
+The `config.toml` is simply the stored, generated information needed to run the chains and relayer from the helper CLI (`.start.sh`).
 
 ## start.sh
 
