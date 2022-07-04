@@ -6,10 +6,11 @@
 usage() {
   cat << EOF >&2
 
-Usage: $0 [-s] [-h]
+Usage: $0 [-s] [-h] [-i <IP Address>]
 
   -s: Use SSH for Github repos (defaults to https)
   -h: Show this message
+  -i: Specify a non-localhost IP
 
   *Hint* - Set environment variable BASE_IBC_PATH to point build to a different path. Defaults to $(pwd)/build
 
@@ -88,6 +89,7 @@ GENESIS_PATH="genesis/e2e-tests-single-node.toml"
 WASM_CHECKSUMS_PATH="wasm/checksums.json"
 
 LOCALHOST_URL="127.0.0.1"
+NETWORK=""
 
 # Spawn an anoman child process and return the PID
 spawn_anoma() {
@@ -99,17 +101,25 @@ spawn_anoma() {
 }
 
 # Get CLI Options
-while getopts "hs" arg; do
+while getopts "hsi:" arg; do
   case $arg in
     (s)
       USE_GIT_SSH=true ;;
     (h)
       usage ;;
+    (i)
+      NETWORK=${OPTARG}
+      ;;
     (*)
       usage ;;
     # TODO: Add option to force-rebuild everything (no skipping of existing builds)
   esac
 done
+shift $((OPTIND-1))
+
+if [ -z $NETWORK ]; then
+  NETWORK=$LOCALHOST_URL
+fi
 
 ANOMA_GIT_URL="${GITHUB_HTTPS_URL}${ANOMA_REPO}"
 HERMES_GIT_URL="${GITHUB_HTTPS_URL}${HERMES_REPO}"
@@ -141,7 +151,12 @@ cd $BUILD_DIR/$ANOMA_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n
 if [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anomac  ] || [ ! -f $BUILD_DIR/$ANOMA_DIR/target/release/anoman ]; then
   git checkout $ANOMA_BRANCH && make install && make build-wasm-scripts
 else
-  printf "$STATUS_NOTICE Anoma release targets already present, skipping build...\n\n"
+  printf "$STATUS_NOTICE Anoma release targets already present, skipping build...\n"
+
+  if [ -d $BUILD_DIR/$ANOMA_DIR/.anoma ]; then
+    printf "$STATUS_NOTICE Clearing existing Anoma configuration...\n"
+    rm -rf $BUILD_DIR/$ANOMA_DIR/.anoma
+  fi
 fi
 
 # Initialize Namada Chains
@@ -160,7 +175,7 @@ fi
 # CHAIN A
 printf "$STATUS_INFO Initializing Chain A\n\n"
 # Swap net_address port for Chain A genesis
-sed -i "s/$CHAIN_B_NET_PORT/$CHAIN_A_NET_PORT/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
+sed -i "s/${CHAIN_B_NET_PORT}/${CHAIN_A_NET_PORT}/g" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH
 printf "$STATUS_INFO Using $( grep "net_address" $BUILD_DIR/$ANOMA_DIR/$GENESIS_PATH )\n\n"
 
 CHAIN_A_INIT_STDOUT=$(./target/release/anomac utils init-network \
@@ -172,7 +187,7 @@ CHAIN_A_INIT_STDOUT=$(./target/release/anomac utils init-network \
   --wasm-checksums-path $WASM_CHECKSUMS_PATH)
 
 CHAIN_A_ID=$( echo "${CHAIN_A_INIT_STDOUT%?}" | grep "Derived" | sed 's/Derived chain ID: //g' )
-CHAIN_A_PATH="$BASE_IBC_PATH/$ANOMA_DIR/.anoma/$CHAIN_A_ID"
+CHAIN_A_PATH="$BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_A_ID"
 
 printf "$STATUS_INFO Initialized Chain A: $CHAIN_A_ID\n\n"
 CHAIN_A_FAUCET=$( cat $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_A_ID/setup/other/wallet.toml | \
@@ -194,12 +209,16 @@ CHAIN_B_INIT_STDOUT=$(./target/release/anomac utils init-network \
   --wasm-checksums-path $WASM_CHECKSUMS_PATH)
 
 CHAIN_B_ID=$( echo "${CHAIN_B_INIT_STDOUT%?}" | grep "Derived" | sed 's/Derived chain ID: //g' )
-CHAIN_A_PATH="$BASE_IBC_PATH/$ANOMA_DIR/.anoma/$CHAIN_A_ID"
+CHAIN_B_PATH="$BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_B_ID"
 
 printf "$STATUS_INFO Initialized Chain B: $CHAIN_B_ID\n\n"
 CHAIN_B_FAUCET=$( cat $BUILD_DIR/$ANOMA_DIR/.anoma/$CHAIN_B_ID/setup/other/wallet.toml | \
   grep "faucet " |  cut -d \" -f2 )
 printf "$STATUS_INFO Setting Chain B faucet to $CHAIN_B_FAUCET\n\n"
+
+# Set default chain to Chain A
+sed -i "s/$CHAIN_B_ID/$CHAIN_A_ID/" $BUILD_DIR/$ANOMA_DIR/.anoma/global-config.toml
+printf "$STATUS_INFO Set default chain to $CHAIN_A_ID\n\n"
 
 # Chain A - Copy wasms and checksums.json to appropriate directories
 
@@ -250,8 +269,7 @@ cp $BUILD_DIR/$ANOMA_DIR/wasm/tx_ibc*.wasm $BUILD_DIR/$HERMES_DIR/anoma_wasm
 printf "$STATUS_INFO Copied $BUILD_DIR/$ANOMA_DIR/wasm/tx_ibc*.wasm -->\
  $BUILD_DIR/$HERMES_DIR/anoma_wasm/\n"
 
-# Copy configuration template to Hermes and add Namada Chain IDS
-
+# Copy configuration template to Hermes and add Namada Chain IDs
 cp $BASE_IBC_PATH/$HERMES_CONFIG_TEMPLATE $BUILD_DIR/$HERMES_DIR/config.toml
 printf "$STATUS_INFO Copied $BASE_IBC_PATH/$HERMES_CONFIG_TEMPLATE -->\
  $BUILD_DIR/$HERMES_DIR/config.toml\n"
@@ -281,7 +299,7 @@ $( echo "${ANOMAN_PROCESSES%?}")
 
 EOF
 
-# Create connection
+# Create IBC connection and channel
 
 printf "$STATUS_INFO Creating connection between $CHAIN_A_ID and $CHAIN_B_ID\n"
 # Wait for block height to be > 0
@@ -313,6 +331,28 @@ else
 fi
 cd $BUILD_DIR && printf "\n$STATUS_WARN Changed directory to $(pwd)\n" 
 
+if [ $NETWORK != $LOCALHOST_URL ]; then
+  printf "$STATUS_NOTICE Updating for remote host configuration...\n"
+
+  # Update configs for Chain A
+  sed -i 's/127.0.0.1/0.0.0.0/g' $CHAIN_A_PATH/config.toml
+  sed -i 's/127.0.0.1/0.0.0.0/g' $CHAIN_A_PATH/setup/validator-0/.anoma/$CHAIN_A_ID/config.toml
+  sed -i 's/127.0.0.1/0.0.0.0/g' \
+    $CHAIN_A_PATH/setup/validator-0/.anoma/$CHAIN_A_ID/tendermint/config/config.toml
+  sed -i 's/^\(cors_allowed_origins =\).*/\1 ["*"]/' \
+    $CHAIN_A_PATH/setup/validator-0/.anoma/$CHAIN_A_ID/tendermint/config/config.toml
+
+  # Update configs for Chain B
+  sed -i 's/127.0.0.1/0.0.0.0/g' $CHAIN_B_PATH/config.toml
+  sed -i 's/127.0.0.1/0.0.0.0/g' $CHAIN_B_PATH/setup/validator-0/.anoma/$CHAIN_B_ID/config.toml
+  sed -i 's/127.0.0.1/0.0.0.0/g' \
+    $CHAIN_B_PATH/setup/validator-0/.anoma/$CHAIN_B_ID/tendermint/config/config.toml
+  sed -i 's/^\(cors_allowed_origins =\).*/\1 ["*"]/' \
+    $CHAIN_B_PATH/setup/validator-0/.anoma/$CHAIN_B_ID/tendermint/config/config.toml
+
+  printf "$STATUS_INFO Successfully updated configuration!\n\n"
+fi
+
 # Generate a runtime config for CLI:
 CONFIG_PATH=$BUILD_DIR/config.toml
 
@@ -334,18 +374,18 @@ ENV_PATH=$BUILD_DIR/.env
 write_env() {
   cat <<EOF > $ENV_PATH
 # Chain A
-REACT_APP_CHAIN_A_ALIAS=$CHAIN_A_ALIAS
-REACT_APP_CHAIN_A_ID=$CHAIN_A_ID
-REACT_APP_CHAIN_A_URL=$LOCALHOST_URL
-REACT_APP_CHAIN_A_PORT=$CHAIN_A_PORT
-REACT_APP_CHAIN_A_FAUCET=$CHAIN_A_FAUCET
+REACT_APP_CHAIN_A_ALIAS=${CHAIN_A_ALIAS}
+REACT_APP_CHAIN_A_ID=${CHAIN_A_ID}
+REACT_APP_CHAIN_A_URL=${NETWORK}
+REACT_APP_CHAIN_A_PORT=${CHAIN_A_PORT}
+REACT_APP_CHAIN_A_FAUCET=${CHAIN_A_FAUCET}
 
 # Chain B
-REACT_APP_CHAIN_B_ALIAS=$CHAIN_B_ALIAS
-REACT_APP_CHAIN_B_ID=$CHAIN_B_ID
-REACT_APP_CHAIN_B_URL=$LOCALHOST_URL
-REACT_APP_CHAIN_B_PORT=$CHAIN_B_PORT
-REACT_APP_CHAIN_B_FAUCET=$CHAIN_B_FAUCET
+REACT_APP_CHAIN_B_ALIAS=${CHAIN_B_ALIAS}
+REACT_APP_CHAIN_B_ID=${CHAIN_B_ID}
+REACT_APP_CHAIN_B_URL=${NETWORK}
+REACT_APP_CHAIN_B_PORT=${CHAIN_B_PORT}
+REACT_APP_CHAIN_B_FAUCET=${CHAIN_B_FAUCET}
 EOF
 }
 
